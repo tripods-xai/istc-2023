@@ -1,11 +1,11 @@
-name: idc
+name: istc_2023
 channels:
   - defaults
   - conda-forge
   - pytorch
   - anaconda
 dependencies:
-  - mamba
+  - python=3.9
   - pip
   - torchvision
   - cpuonly
@@ -14,4 +14,3 @@ dependencies:
   - black
   - mypy
   - pytest
-prefix: /home/abhijeet/miniconda3/envs/idc
