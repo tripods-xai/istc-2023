@@ -1,0 +1,7 @@
+setuptools
+tqdm
+scikit-learn
+numpy-indexed
+networkx
+pytest
+torchinfo

@@ -1,0 +1,445 @@
+from typing import Literal
+
+import torch
+import numpy as np
+
+from ..utils import (
+    DeviceManager,
+    DEFAULT_DEVICE_MANAGER,
+    enumerate_binary_inputs,
+    MaskedTensor,
+)
+from ..encoders import TrellisTurboEncoder, GeneralizedConvolutionalEncoder
+from ..modulation import Modulator
+from ..channels import NoisyChannel
+from ..interleavers import Interleaver
+
+from .decoder import SoftDecoder
+from .codebook_decoder import get_joint_log_probs
+
+
+class SourceInfluenceWindow:
+    """A class for managing pesky index manipulations of a window.
+
+    Attributes
+    ----------
+    position : int
+        The timestep in in the input sequence around which the window is.
+    window : int
+        The length of the window of the encoder.
+    input_size: int
+        The length of the input sequence
+    low : int
+        The lowest index on the input sequence of the source influence
+        window (inclusive).
+    high : int
+        The highest index on the input sequence of the source influence
+        window (exclusive).
+    relative_position : int
+        The position relative to the range (low,high) that j corresponds
+        to.
+    """
+
+    def __init__(self, position: int, window: int, input_size: int) -> None:
+        self.position = position
+        self.window = window
+        self.input_size = input_size
+
+        self.low = max(self.position - self.window + 1, 0)
+        self.high = min(self.position + 2 * self.window - 1, self.input_size)
+        self.relative_position = self.position - self.low
+
+        self.max_length = self.max_source_influence_window_length(self.window)
+        self.length_differential = self.max_length - len(self)
+        self.is_left_boundary = (self.length_differential > 0) and self.low == 0
+        self.is_right_boundary = (
+            self.length_differential > 0
+        ) and self.high == self.input_size
+
+        self.window_codebook_index = self._get_window_codebook_index()
+
+    def __len__(self):
+        return self.high - self.low
+
+    def _get_window_codebook_index(self):
+        if self.is_left_boundary:
+            return slice(len(self))
+        elif self.is_right_boundary:
+            return (
+                slice(0, len(self), 2 ** (self.length_differential)),
+                slice(self.high - self.position),
+            )
+        else:
+            return slice(None)
+
+    @staticmethod
+    def max_source_influence_window_length(window: int) -> int:
+        return 2 * window - 1
+
+    def __str__(self):
+        s = f"""SourceInfluenceWindow(
+            position={self.position}
+            window={self.window}
+            input_size={self.input_size}
+            low={self.low}
+            high={self.high}
+            relative_position={self.relative_position}
+            length={len(self)}
+            max_length={self.max_length}
+            length_differential={self.length_differential}
+            is_left_boundary={self.is_left_boundary}
+            is_right_boundary={self.is_right_boundary}
+        )
+        """
+        return s
+
+
+def make_constraint(
+    uj_value: Literal[0],
+    source_influence_window: SourceInfluenceWindow,
+    device: torch.device,
+):
+    constraint = torch.zeros(
+        len(source_influence_window), dtype=torch.int8, device=device
+    )
+    constraint[source_influence_window.relative_position] = uj_value
+    constraint_unmasked = constraint.bool()
+    constraint_unmasked[source_influence_window.relative_position] = True
+    return MaskedTensor(tensor=constraint, mask=~constraint_unmasked, no_fill=True)
+
+
+def get_uj_log_prob(
+    channel_log_probs_noni: torch.FloatTensor,
+    channel_log_probs_i: torch.FloatTensor,
+    source_influence_window_noni: SourceInfluenceWindow,
+    source_influence_window_i: SourceInfluenceWindow,
+    depi_window: MaskedTensor,
+    chunk_size: int,
+    uj_value: Literal[0],
+    logit_output: torch.FloatTensor,
+    # debugging
+    interleaver: Interleaver,
+):
+    """
+    Parameters
+    ----------
+    channel_log_probs_noni (Batch x (2,) * (source_influence_window_noni))
+    channel_log_probs_i  (Batch x (2,) * (source_influence_window_i))
+    pi_arange (source_influence_window_noni)
+    logit_out (Batch x Time)
+    """
+    batch_size = channel_log_probs_noni.shape[0]
+    device = channel_log_probs_noni.device
+
+    assert channel_log_probs_i.shape[0] == batch_size
+
+    assert len(source_influence_window_noni) == channel_log_probs_noni.ndim - 1
+    assert len(source_influence_window_i) == channel_log_probs_i.ndim - 1
+
+    j = source_influence_window_noni.position
+
+    inputs_noni = enumerate_binary_inputs(
+        len(source_influence_window_noni),
+        constraint=make_constraint(uj_value, source_influence_window_noni, device),
+        device=device,
+    )
+    selected_inputs_noni = inputs_noni[
+        :, depi_window.tensor[depi_window.mask] - source_influence_window_noni.low
+    ]
+    print(
+        torch.arange(
+            source_influence_window_noni.low, source_influence_window_noni.high
+        )
+    )
+    print(f"inputs_noni: {inputs_noni}")
+    print(f"selected_inputs_noni: {selected_inputs_noni}")
+
+    inputs_i = enumerate_binary_inputs(
+        len(source_influence_window_i),
+        constraint=make_constraint(uj_value, source_influence_window_i, device),
+        device=device,
+    )
+    selected_inputs_i = inputs_i[:, depi_window.mask]
+    print(
+        interleaver.deinterleave_index(
+            torch.arange(source_influence_window_i.low, source_influence_window_i.high)
+        )
+    )
+    print(f"inputs_i: {inputs_i}")
+    print(f"selected_inputs_i: {selected_inputs_i}")
+
+    agreement = torch.where(
+        torch.all(selected_inputs_noni[:, None] == selected_inputs_i[None], dim=-1),
+        0.0,
+        -np.inf,
+    )
+
+    uj_is_value_noni = torch.select(
+        channel_log_probs_noni,
+        dim=source_influence_window_noni.relative_position + 1,
+        index=uj_value,
+    ).reshape(batch_size, -1)
+    uj_is_value_i = torch.select(
+        channel_log_probs_i,
+        dim=source_influence_window_i.relative_position + 1,
+        index=uj_value,
+    ).reshape(batch_size, -1)
+    print(f"uj_noni: {uj_is_value_noni.shape}")
+    print(f"uj_i: {uj_is_value_i.shape}")
+    print(f"agreement: {agreement.shape}")
+    print(f"agreement: {agreement}")
+
+    res = torch.logsumexp(
+        channel_log_probs_noni[(slice(None), *inputs_noni.transpose(0, 1).long(), None)]
+        + channel_log_probs_i[(slice(None), None, *inputs_i.transpose(0, 1).long())]
+        + agreement[None],
+        dim=[1, 2],
+    )
+    logit_output[:, j] += (2.0 * uj_value - 1) * res
+
+    return logit_output
+
+
+def get_channel_log_probs(
+    y: torch.Tensor,
+    source_influence_window: SourceInfluenceWindow,
+    window_codebook: torch.Tensor,
+    modulator: Modulator,
+    channel: NoisyChannel,
+    chunk_size: int,
+    channel_log_probs_out: torch.FloatTensor = None,
+):
+    y_window = y[:, source_influence_window.position : source_influence_window.high]
+    selected_window_codebook = window_codebook[
+        source_influence_window.window_codebook_index
+    ]
+
+    print(f"y_window {y_window.shape}")
+    print(f"selected_window_codebook {selected_window_codebook.shape}")
+    return get_joint_log_probs(
+        y=y_window,
+        codebook=selected_window_codebook,
+        modulator=modulator,
+        channel=channel,
+        chunk_size=chunk_size,
+        joint_log_probs_out=channel_log_probs_out,
+    )
+
+
+def get_conditional_logit(
+    channel_log_probs_noni: torch.FloatTensor,
+    channel_log_probs_i: torch.FloatTensor,
+    source_influence_window_noni: SourceInfluenceWindow,
+    source_influence_window_i: SourceInfluenceWindow,
+    interleaver: Interleaver,
+    chunk_size: int,
+    logit_output: torch.FloatTensor,
+    device: torch.device,
+):
+    """
+    Parameters
+    ----------
+    channel_log_probs_noni (Batch x 2 ** len(source_influence_window_noni)) : torch.FloatTensor
+        ...
+    channel_log_probs_i (Batch x 2 ** len(source_influence_window_i)) : torch.FloatTensor
+        ...
+    logit_output (Batch x Time) : torch.FloatTensor
+        A FloatTensor that will hold the logits of all the input bits.
+        We only write into time `j`.
+    """
+    input_size = logit_output.shape[1]
+    batch_size = channel_log_probs_noni.shape[0]
+    j = source_influence_window_noni.position
+
+    assert len(interleaver) == input_size
+    assert 0 <= j < input_size
+
+    assert channel_log_probs_noni.ndim == channel_log_probs_i.ndim == 2
+    assert channel_log_probs_i.shape[0] == logit_output.shape[0] == batch_size
+
+    assert channel_log_probs_noni.shape[1] == 2 ** len(source_influence_window_noni)
+    assert channel_log_probs_i.shape[1] == 2 ** len(source_influence_window_i)
+
+    # First get the pi_aranges
+    depi_window = interleaver.deinterleave_index(
+        torch.arange(
+            source_influence_window_i.low, source_influence_window_i.high, device=device
+        )
+    )
+    overlaps = (
+        (depi_window >= source_influence_window_noni.low)
+        & (depi_window < source_influence_window_noni.high)
+        & (depi_window != source_influence_window_noni.position)
+    )
+    depi_window = MaskedTensor(depi_window, overlaps, no_fill=True)
+
+    channel_log_probs_noni = channel_log_probs_noni.reshape(
+        (batch_size,) + ((2,) * len(source_influence_window_noni))
+    )
+    channel_log_probs_i = channel_log_probs_i.reshape(
+        (batch_size,) + ((2,) * len(source_influence_window_i))
+    )
+    print(f"channel_log_probs_noni: {channel_log_probs_noni.shape}")
+    print(f"channel_log_probs_i: {channel_log_probs_i.shape}")
+
+    for uj_value in [0, 1]:
+        get_uj_log_prob(
+            channel_log_probs_noni=channel_log_probs_noni,
+            channel_log_probs_i=channel_log_probs_i,
+            source_influence_window_noni=source_influence_window_noni,
+            source_influence_window_i=source_influence_window_i,
+            depi_window=depi_window,
+            chunk_size=chunk_size,
+            uj_value=uj_value,
+            logit_output=logit_output,
+            # debugging
+            interleaver=interleaver,
+        )
+
+    return logit_output
+
+
+class OptimalTurboDecoder(SoftDecoder):
+    def __init__(
+        self,
+        encoder: TrellisTurboEncoder[GeneralizedConvolutionalEncoder],
+        modulator: Modulator,
+        channel: NoisyChannel,
+        chunk_size: int = 2**14,
+        device_manager: DeviceManager = DEFAULT_DEVICE_MANAGER,
+    ) -> None:
+        super().__init__(device_manager)
+        self.encoder = encoder
+        self.modulator = modulator
+        self.channel = channel
+        self.chunk_size = chunk_size
+
+        self.validate()
+
+        self.max_window_noni_length = (
+            SourceInfluenceWindow.max_source_influence_window_length(
+                self.encoder.noninterleaved_encoder.window
+            )
+        )
+        self.max_window_i_length = (
+            SourceInfluenceWindow.max_source_influence_window_length(
+                self.encoder.interleaved_encoder.window
+            )
+        )
+        (
+            self._noni_window_codebook,
+            self._i_window_codebook,
+        ) = self._get_window_codebook()
+
+    @property
+    def source_data_len(self):
+        return self.encoder.input_size
+
+    def validate(self):
+        assert self.encoder.noninterleaved_encoder.feedback is None
+        assert self.encoder.interleaved_encoder.feedback is None
+
+    def _get_window_codebook(self):
+        noni_window_codebook = self.encoder.noninterleaved_encoder._conv_encode(
+            enumerate_binary_inputs(
+                self.max_window_noni_length,
+                dtype=torch.int8,
+            ),
+            table=self.encoder.noninterleaved_encoder.table,
+            _base_2_accumulator=self.encoder.noninterleaved_encoder._base_2_accumulator,
+        )
+        i_window_codebook = self.encoder.interleaved_encoder._conv_encode(
+            enumerate_binary_inputs(
+                self.max_window_i_length,
+                dtype=torch.int8,
+            ),
+            table=self.encoder.interleaved_encoder.table,
+            _base_2_accumulator=self.encoder.interleaved_encoder._base_2_accumulator,
+        )
+
+        return noni_window_codebook, i_window_codebook
+
+    def conditional_logits(self, y: torch.Tensor) -> torch.Tensor:
+        batch_size = y.shape[0]
+
+        # Create tensors whose storage be reused
+        channel_log_probs_noni_memory = torch.empty(
+            (batch_size, 2**self.max_window_noni_length),
+            dtype=torch.float,
+            device=self.device_manager.device,
+        )
+        channel_log_probs_i_memory = torch.empty(
+            (batch_size, 2**self.max_window_i_length),
+            dtype=torch.float,
+            device=self.device_manager.device,
+        )
+        logits = torch.zeros(
+            (batch_size, self.source_data_len),
+            dtype=torch.float,
+            device=self.device_manager.device,
+        )
+
+        for j in range(self.source_data_len):
+            source_influence_window_noni = SourceInfluenceWindow(
+                j, self.encoder.noninterleaved_encoder.window, self.source_data_len
+            )
+            source_influence_window_i = SourceInfluenceWindow(
+                self.encoder.interleaver.interleave_index(j),
+                self.encoder.interleaved_encoder.window,
+                self.source_data_len,
+            )
+            print("==================")
+            print(f"j={source_influence_window_noni.position}")
+            print(f"pi(j)={source_influence_window_i.position}")
+
+            print(f"noni_high={source_influence_window_noni.high}")
+            print(f"noni_low={source_influence_window_noni.low}")
+            print(f"i_high={source_influence_window_i.high}")
+            print(f"i_low={source_influence_window_i.low}")
+            print(f"i_input_size={source_influence_window_i.input_size}")
+
+            print(f"Interleaver: {self.encoder.interleaver.permutation}")
+            print(f"Noni codebook {self._noni_window_codebook.shape}")
+            print(f"i codebook {self._i_window_codebook.shape}")
+
+            channel_log_probs_noni = get_channel_log_probs(
+                y=y[:, :, : self.encoder.noninterleaved_encoder.num_output_channels],
+                source_influence_window=source_influence_window_noni,
+                window_codebook=self._noni_window_codebook,
+                modulator=self.modulator,
+                channel=self.channel,
+                chunk_size=self.chunk_size,
+                channel_log_probs_out=channel_log_probs_noni_memory[
+                    :, : 2 ** len(source_influence_window_noni)
+                ],
+            )
+            channel_log_probs_i = get_channel_log_probs(
+                y=y[:, :, self.encoder.noninterleaved_encoder.num_output_channels :],
+                source_influence_window=source_influence_window_i,
+                window_codebook=self._i_window_codebook,
+                modulator=self.modulator,
+                channel=self.channel,
+                chunk_size=self.chunk_size,
+                channel_log_probs_out=channel_log_probs_i_memory[
+                    :, : 2 ** len(source_influence_window_i)
+                ],
+            )
+
+            logits = get_conditional_logit(
+                channel_log_probs_noni=channel_log_probs_noni,
+                channel_log_probs_i=channel_log_probs_i,
+                source_influence_window_noni=source_influence_window_noni,
+                source_influence_window_i=source_influence_window_i,
+                interleaver=self.encoder.interleaver,
+                chunk_size=self.chunk_size,
+                logit_output=logits,
+                device=self.device_manager.device,
+            )
+
+        return logits
+
+    def forward(self, received_symbols: torch.Tensor):
+        return self.conditional_logits(received_symbols)
+
+    def settings(self):
+        raise NotImplementedError()

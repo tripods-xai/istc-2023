@@ -1,0 +1,62 @@
+class SourceInfluenceWindow:
+    """A class for managing pesky index manipulations of a window.
+
+    Attributes
+    ----------
+    j : torch.LongTensor
+        The timestep in in the input sequence around which the window is.
+        May be a single integer or a batch of timesteps.
+    window : int
+        The length of the window of the encoder.
+    input_size: int
+        The length of the input sequence
+    low : torch.LongTensor
+        The lowest index on the input sequence of the source influence
+        window (inclusive).
+    high : torch.LongTensor
+        The highest index on the input sequence of the source influence
+        window (exclusive).
+    relative_position : torch.LongTensor
+        The position relative to the range (low,high) that j corresponds
+        to.
+    length : torch.LongTensor
+    max_length : int
+    length_differential : torch.LongTensor
+    is_left_boundary : torch.BoolTensor
+    """
+
+    def __init__(self, j: torch.LongTensor, window: int, input_size: int) -> None:
+        self.j = torch.tensor(j, dtype=torch.long) if isinstance(j, int) else j
+        self.window = window
+        self.input_size = input_size
+
+        self.low = torch.maximum(
+            self.j - self.window + 1, torch.tensor(0, dtype=torch.long)
+        )
+        self.high = torch.minimum(
+            self.j + self.window, torch.tensor(self.input_size, dtype=torch.long)
+        )
+        self.relative_position = self.j - self.low
+
+        self.length = self.high - self.low
+        self.max_length = self.max_source_influence_window_length(self.window)
+        self.length_differential = self.max_length - self.length
+        self.is_left_boundary = (self.length_differential > 0) & (self.low == 0)
+        self.is_right_boundary = (self.length_differential > 0) & (
+            self.high == self.input_size
+        )
+
+        self.window_codebook_index = self._get_window_codebook_index()
+
+    def _get_window_codebook_index(self):
+        if self.j.ndim == 0:
+            if self.is_left_boundary:
+                return slice(len(self))
+            elif self.is_right_boundary:
+                return slice(0, len(self), 2 ** (self.length_differential))
+            else:
+                return slice(None)
+
+    @staticmethod
+    def max_source_influence_window_length(window: int) -> int:
+        return 2 * window - 1

@@ -1,0 +1,17 @@
+name: idc
+channels:
+  - defaults
+  - conda-forge
+  - pytorch
+  - anaconda
+dependencies:
+  - mamba
+  - pip
+  - torchvision
+  - cpuonly
+  - pytorch
+  - torchaudio
+  - black
+  - mypy
+  - pytest
+prefix: /home/abhijeet/miniconda3/envs/idc

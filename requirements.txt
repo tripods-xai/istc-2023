@@ -1,0 +1,8 @@
+scikit-learn
+tqdm
+numpy-indexed
+networkx
+-e .
+
+# Install via conda
+# torchinfo - mamba install -c conda-forge torchinfo

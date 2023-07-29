@@ -1,0 +1,117 @@
+import torch
+
+from src.encoders import ParityEncoder
+from src.channels import AWGN
+from src.decoders import SGRAND
+from src.utils import DeviceManager
+
+from ..channels import create_noiseless_channel
+from ..encoders import get_codebook
+
+
+def test_no_noise():
+    manager = DeviceManager(no_cuda=True, seed=1234)
+    batch_size = 100
+    block_size = 50
+
+    input_data = torch.randint(
+        0,
+        2,
+        (batch_size, block_size),
+        generator=manager.generator,
+        device=manager.device,
+    ).float()
+    encoder = ParityEncoder(
+        input_size=block_size, output_size=int(1.5 * block_size), device_manager=manager
+    )
+    channel = create_noiseless_channel(AWGN)(snr=0.0, device_manager=manager)
+    decoder = SGRAND(
+        source_data_len=block_size,
+        channel=channel,
+        encoder=encoder,
+        device_manager=manager,
+    )
+
+    x = encoder(input_data)
+    y = channel(x)
+    decoded_data, log_ml, _ = decoder(y)
+    true_log_prob = torch.sum(channel.log_prob(y, encoder(decoded_data)), dim=-1)
+
+    torch.testing.assert_close(actual=decoded_data, expected=input_data)
+    torch.testing.assert_close(
+        actual=log_ml,
+        expected=true_log_prob,
+    )
+
+
+def test_with_noise():
+    manager = DeviceManager(no_cuda=True, seed=1234)
+    batch_size = 100
+    block_size = 10
+
+    input_data = torch.randint(
+        0,
+        2,
+        (batch_size, block_size),
+        generator=manager.generator,
+        device=manager.device,
+    ).float()
+    encoder = ParityEncoder(
+        input_size=block_size, output_size=int(1.5 * block_size), device_manager=manager
+    )
+    codebook = get_codebook(encoder, block_size=block_size)
+    channel = AWGN(snr=3.0, device_manager=manager)
+    decoder = SGRAND(
+        source_data_len=block_size,
+        channel=channel,
+        encoder=encoder,
+        device_manager=manager,
+    )
+
+    x = encoder(input_data)
+    y = channel(x)
+    decoded_data, log_ml, stats = decoder(y)
+    print(f"Num Queries {stats['queries']}")
+
+    # y is B x data_len, codebook is 2^block_size x data_len
+    # B x 1 x data_len - 1 x 2^block_size x data_len -sum-> B x 2^block_size
+    true_log_probs = torch.sum(channel.log_prob(y[:, None], codebook[None]), dim=-1)
+    ml_codeword_ind = torch.argmax(true_log_probs, dim=1)  # Output will be shape B
+    true_ml_codewords = codebook[ml_codeword_ind]  # will be B x data_len
+
+    _, expected_decoded_data = encoder.is_codeword(true_ml_codewords)
+    expected_log_prob = true_log_probs[torch.arange(batch_size), ml_codeword_ind]
+    torch.testing.assert_close(
+        actual=log_ml,
+        expected=expected_log_prob,
+    )
+    torch.testing.assert_close(actual=decoded_data, expected=expected_decoded_data)
+
+
+def test_profile_with_noise():
+    manager = DeviceManager(no_cuda=True, seed=1234)
+    batch_size = 1000
+    block_size = 25
+
+    input_data = torch.randint(
+        0,
+        2,
+        (batch_size, block_size),
+        generator=manager.generator,
+        device=manager.device,
+    ).float()
+    encoder = ParityEncoder(
+        input_size=block_size, output_size=int(1.5 * block_size), device_manager=manager
+    )
+    channel = AWGN(snr=3.0, device_manager=manager)
+    decoder = SGRAND(
+        source_data_len=block_size,
+        channel=channel,
+        encoder=encoder,
+        device_manager=manager,
+    )
+
+    x = encoder(input_data)
+    y = channel(x)
+    decoded_data, log_ml, stats = decoder(y)
+    print(f"Num Queries {stats['queries']}")

@@ -1,0 +1,237 @@
+import torch
+import torch.nn.functional as F
+
+from src.encoders import AffineConvolutionalEncoder, TrellisTurboEncoder
+from src.channels import AWGN, BinarySymmetric
+from src.modulation import BPSK
+from src.decoders import (
+    BCJRDecoder,
+    CodebookDecoder,
+    OptimalTurboDecoder,
+    SourceInfluenceWindow,
+)
+from src.utils import sigma2snr, DeviceManager
+from src.interleavers import FixedPermuteInterleaver
+
+
+def test_75_dependence():
+    manager = DeviceManager(no_cuda=True, seed=1234)
+
+    batch_size = 1
+    msg_length = 18
+    input_bits = torch.randint(
+        0, 2, (batch_size, msg_length), generator=manager.generator
+    )
+
+    encoder = AffineConvolutionalEncoder(
+        torch.CharTensor([[1, 1, 1], [1, 0, 1]]),
+        torch.CharTensor([0, 0]),
+        num_steps=msg_length,
+        device_manager=manager,
+    )
+
+    # sigma = 1.0
+    # channel = AWGN(snr=sigma2snr(sigma), device_manager=manager)
+    p = 0.3
+    channel = BinarySymmetric(p=p, device_manager=manager)
+
+    modulator = BPSK(device_manager=manager)
+
+    bcjr_decoder = BCJRDecoder(
+        encoder, modulator=modulator, channel=channel, device_manager=manager
+    )
+
+    encoder_out = encoder(input_bits)
+    received_msg: torch.FloatTensor = channel(modulator(encoder_out))
+
+    bcjr_confidence = bcjr_decoder(
+        received_msg,
+    )
+
+    for j in range(msg_length):
+        print("====================")
+        print(f"j={j}")
+        si = SourceInfluenceWindow(position=j, window=3, input_size=msg_length)
+        print(si)
+
+        independendent_input_ind = torch.cat(
+            [
+                torch.arange(si.low),
+                torch.arange(si.high, si.input_size),
+            ]
+        )
+        adjusted_input = input_bits.clone()
+        adjusted_input[:, independendent_input_ind] = (
+            -1 * adjusted_input[:, independendent_input_ind] + 1
+        )
+        adjusted_out = encoder(adjusted_input)
+
+        torch.testing.assert_close(
+            adjusted_out[:, si.position : si.high],
+            encoder_out[:, si.position : si.high],
+        )
+
+        independendent_output_ind = torch.cat(
+            [
+                torch.arange(si.position),
+                torch.arange(si.high, si.input_size),
+            ]
+        )
+        print(f"independent_inds = {independendent_output_ind}")
+        adjusted_y = received_msg.clone()
+        adjusted_y[:, independendent_output_ind] *= -1
+        print(f"Received: {received_msg}")
+        print(f"Adjusted: {adjusted_y}")
+
+        adjusted_confidence = bcjr_decoder(adjusted_y)
+
+        torch.testing.assert_close(
+            adjusted_confidence[:, j], bcjr_confidence[:, j], atol=5e-2, rtol=1e-1
+        )
+
+
+# def test_757_dependence():
+#     manager = DeviceManager(no_cuda=True, seed=1234)
+
+#     batch_size = 10
+#     msg_length = 18
+#     input_bits = torch.randint(
+#         0, 2, (batch_size, msg_length), generator=manager.generator
+#     )
+
+#     encoder_noni = AffineConvolutionalEncoder(
+#         torch.CharTensor([[1, 1, 1], [1, 0, 1]]),
+#         torch.CharTensor([0, 0]),
+#         num_steps=msg_length,
+#     )
+#     encoder_i = AffineConvolutionalEncoder(
+#         torch.CharTensor([[1, 0, 1]]),
+#         torch.CharTensor([0]),
+#         num_steps=msg_length,
+#     )
+#     interleaver = FixedPermuteInterleaver(msg_length, device_manager=manager)
+#     encoder = TrellisTurboEncoder(
+#         noninterleaved_encoder=encoder_noni,
+#         interleaved_encoder=encoder_i,
+#         interleaver=interleaver,
+#         device_manager=manager,
+#     )
+
+#     sigma = 1.0
+#     channel = AWGN(snr=sigma2snr(sigma), device_manager=manager)
+
+#     modulator = BPSK(device_manager=manager)
+
+#     codebook_encoder = encoder.to_codebook()
+
+#     codebook_decoder = CodebookDecoder(
+#         codebook_encoder, modulator=modulator, channel=channel, device_manager=manager
+#     )
+
+#     received_msg: torch.FloatTensor = channel(modulator(encoder(input_bits)))
+
+#     codebook_confidence = codebook_decoder(
+#         received_msg,
+#     )
+
+#     for j in range(msg_length):
+#         si_noni = SourceInfluenceWindow(position=j, window=3, input_size=msg_length)
+#         si_i = SourceInfluenceWindow(
+#             position=interleaver.interleave_index(j), window=3, input_size=msg_length
+#         )
+#         independendent_output_ind_noni = torch.cat(
+#             [
+#                 torch.arange(si_noni.position),
+#                 torch.arange(si_noni.high, si_noni.input_size),
+#             ]
+#         )
+#         independendent_output_ind_i_depi = interleaver.deinterleave_index(
+#             torch.cat(
+#                 [torch.arange(si_i.position), torch.arange(si_i.high, si_i.input_size)]
+#             )
+#         )
+#         y_noni = received_msg[
+#             :, :, : encoder.noninterleaved_encoder.num_output_channels
+#         ]
+#         y_i = received_msg[:, :, encoder.noninterleaved_encoder.num_output_channels :]
+#         y_i_depi = interleaver.deinterleave(y_i)
+
+#         adjusted_y_noni = y_noni.clone()
+#         adjusted_y_noni[:, independendent_output_ind_noni] += torch.randn(
+#             adjusted_y_noni[:, independendent_output_ind_noni].shape,
+#             generator=manager.generator,
+#             device=manager.device,
+#         )
+#         adjusted_y_i_depi = y_i_depi.clone()
+#         adjusted_y_i_depi[:, independendent_output_ind_i_depi] += torch.randn(
+#             adjusted_y_i_depi[:, independendent_output_ind_i_depi].shape,
+#             generator=manager.generator,
+#             device=manager.device,
+#         )
+
+#         adjusted_confidence = codebook_decoder(
+#             torch.cat(
+#                 [adjusted_y_noni, interleaver.interleave(adjusted_y_i_depi)], dim=2
+#             )
+#         )
+
+#         assert torch.testing.assert_close(adjusted_confidence, codebook_confidence)
+
+
+# def test_757_codebook_decoder_with_optimal_turbo():
+#     manager = DeviceManager(no_cuda=True, seed=1234)
+
+#     batch_size = 10
+#     msg_length = 18
+
+#     input_bits = torch.randint(
+#         0, 2, (batch_size, msg_length), generator=manager.generator
+#     )
+
+#     encoder_noni = AffineConvolutionalEncoder(
+#         torch.CharTensor([[1, 1, 1], [1, 0, 1]]),
+#         torch.CharTensor([0, 0]),
+#         num_steps=msg_length,
+#     )
+#     encoder_i = AffineConvolutionalEncoder(
+#         torch.CharTensor([[1, 0, 1]]),
+#         torch.CharTensor([0]),
+#         num_steps=msg_length,
+#     )
+#     interleaver = FixedPermuteInterleaver(msg_length, device_manager=manager)
+#     encoder = TrellisTurboEncoder(
+#         noninterleaved_encoder=encoder_noni,
+#         interleaved_encoder=encoder_i,
+#         interleaver=interleaver,
+#         device_manager=manager,
+#     )
+
+#     sigma = 1.0
+#     channel = AWGN(snr=sigma2snr(sigma), device_manager=manager)
+
+#     modulator = BPSK(device_manager=manager)
+
+#     codebook_encoder = encoder.to_codebook()
+
+#     codebook_decoder = CodebookDecoder(
+#         codebook_encoder, modulator=modulator, channel=channel, device_manager=manager
+#     )
+
+#     turbo_decoder = OptimalTurboDecoder(
+#         encoder=encoder,
+#         modulator=modulator,
+#         channel=channel,
+#         chunk_size=2**18,
+#         device_manager=manager,
+#     )
+
+#     received_msg = channel(modulator(encoder(input_bits)))
+#     codebook_confidence = codebook_decoder(
+#         received_msg,
+#     )
+#     turbo_confidence = turbo_decoder(
+#         received_msg,
+#     )
+#     print(f"Codebook out: {codebook_confidence}")
+#     print(f"Turbo out: {turbo_confidence}")
+#     torch.testing.assert_close(codebook_confidence, turbo_confidence)

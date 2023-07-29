@@ -1,0 +1,65 @@
+import abc
+from typing import Sequence
+
+import torch
+
+from .utils import WithSettings
+
+# NOTE: I could also subclass torch.utils.data.IterableDataset, but this
+# is so simple, it didn't seem necessary.
+class DistributionDataset(WithSettings):
+    def __init__(self, num_samples: int, batch_size: int, dtype=torch.float) -> None:
+        super().__init__()
+        self.num_samples = num_samples
+        self.batch_size = batch_size
+        self.dtype = dtype
+
+    @property
+    @abc.abstractmethod
+    def data_shape(self) -> Sequence[int]:
+        pass
+
+    @abc.abstractmethod
+    def sample(self, n: int) -> torch.Tensor:
+        """Sample `n` values from the distribution.
+
+        Parameters
+        ----------
+        n : int
+            The number of values to sample from the distribution
+
+        Returns
+        -------
+        torch.Tensor[self.dtype] (n x self.data_shape)
+            A tensor of `n` samples from the distribution
+
+        """
+        pass
+
+    def __iter__(self):
+        for i in range(0, self.num_samples, self.batch_size):
+            cur_batch_size = min(self.num_samples - i, self.batch_size)
+            samples = self.sample(n=cur_batch_size)
+            yield samples.to(
+                self.dtype
+            )  # This will be redundant if `.sample`` already takes dtype into account
+
+
+class BinaryUniformDataset(DistributionDataset):
+    def __init__(
+        self,
+        data_shape: Sequence[int],
+        num_samples: int,
+        batch_size: int,
+        dtype=torch.float,
+    ) -> None:
+        super().__init__(num_samples, batch_size, dtype)
+        self._data_shape = data_shape
+
+    @property
+    def data_shape(self) -> Sequence[int]:
+        return self._data_shape
+
+    def sample(self, n: int):
+        output_shape = (n,) + self.data_shape
+        return torch.randint(0, 2, size=output_shape, dtype=self.dtype)
