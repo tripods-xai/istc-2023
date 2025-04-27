@@ -61,6 +61,23 @@
             "write_checkpoints": [true]
         }
     },
+    "benchmark_turboae_40_2": {
+        "name": "benchmark_turboae_codes",
+        "seed": 37849,
+        "runs":{
+            "encoder_decoder_path": ["../models/train_turboae_w9_first_no_front_small_batch_block_len_40_2_e3a1b.pt"],
+            "num_samples": [10000000],
+            "batch_size": [70000],
+            "snr": [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0, -2.5, -3.0],
+            "front_pad": [false],
+            "first_pad": [true],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5]
+        }
+    },
     "benchmark_turboae_40_2_jtree": {
         "name": "benchmark_turboae_codes_jt",
         "seed": 37849,
@@ -73,6 +90,44 @@
             "first_pad": [true],
             "elimination_seed": [69783],
             "precision": ["half"]
+        }
+    },
+    "benchmark_turboae_original_finetune_40": {
+        "name": "benchmark_finetuned_original_turboae_codes",
+        "seed": 37849,
+        "runs":{
+            "block_len": [40],
+            "interleaver_base_seed": [56976],
+            "decoder_path__turboae_type": [["../models/retrain_original_turboae_binary_block_len_40_a91f1.pt", "binary"], ["../models/retrain_original_turboae_block_len_40_e45db.pt", "continuous"]],
+            "num_samples": [10000000],
+            "batch_size": [70000],
+            "snr": [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0, -2.5, -3.0],
+            "front_pad": [false],
+            "first_pad": [false],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5]
+        }
+    },
+    "benchmark_turboae_original_finetune_40_debug": {
+        "name": "benchmark_finetuned_original_turboae_codes",
+        "seed": 37849,
+        "runs":{
+            "block_len": [40],
+            "interleaver_base_seed": [56976],
+            "decoder_path__turboae_type": [["../models/retrain_original_turboae_binary_block_len_40_a91f1.pt", "binary"], ["../models/retrain_original_turboae_block_len_40_e45db.pt", "continuous"]],
+            "num_samples": [200000],
+            "batch_size": [70000],
+            "snr": [3.0,-3.0],
+            "front_pad": [false],
+            "first_pad": [false],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5]
         }
     },
     "retrain_original_turboae_block_len_40": {
@@ -132,6 +187,108 @@
                 "save_every": [1]
             }
     },
+    "decomposition_trajectory_turboae_40_2": {
+        "name": "decomposition_trajectory",
+        "seed": 37849,
+        "runs":{
+            "checkpoint_basename": ["turboae_trainer"],
+            "checkpoint_daterange": [["2023_05_10_09_00_00", "2023_05_11_02_00_00"]],
+            "num_samples": [9000],
+            "batch_size": [30],
+            "snr": [0.0, 1.0, 2.0],
+            "front_pad": [false],
+            "first_pad": [true],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5],
+            "stop_tol": [2e-1],
+            "resolution": [8],
+            "elimination_seed": [69783]
+        }
+    },
+    "decomposition_turboae_finetune_40": {
+        "name": "decomposition_estimation_finetuned_tae",
+        "seed": 15123,
+        "runs":{
+            "block_len": [40],
+            "interleaver_base_seed": [56976],
+            "decoder_path__turboae_type": [["../models/retrain_original_turboae_binary_block_len_40_a91f1.pt", "binary"], ["../models/retrain_original_turboae_block_len_40_e45db.pt", "continuous"]],
+            "num_samples": [30000],
+            "batch_size": [30],
+            "snr": [0.0, 1.0, 2.0],
+            "front_pad": [false],
+            "first_pad": [true],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5],
+            "stop_tol": [1e-1]
+        }
+    },
+    "decomposition_turboae_finetune_40_debug": {
+        "name": "decomposition_estimation_finetuned_tae",
+        "seed": 15123,
+        "runs":{
+            "block_len": [40],
+            "interleaver_base_seed": [56976],
+            "decoder_path__turboae_type": [["../models/retrain_original_turboae_binary_block_len_40_a91f1.pt", "binary"], ["../models/retrain_original_turboae_block_len_40_e45db.pt", "continuous"]],
+            "num_samples": [61],
+            "batch_size": [30],
+            "snr": [0.0],
+            "front_pad": [false],
+            "first_pad": [true],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5],
+            "stop_tol": [1e-1],
+            "precision": ["half"]
+        }
+    },
+    "xe_trajectory_turboae_40_2": {
+        "name": "xe_trajectory",
+        "seed": 37849,
+        "runs":{
+            "checkpoint_basename": ["turboae_trainer"],
+            "checkpoint_daterange": [["2023_05_10_09_00_00", "2023_05_11_02_00_00"]],
+            "num_samples": [1000000],
+            "batch_size": [70000],
+            "snr": [0.0, 1.0, 2.0],
+            "front_pad": [false],
+            "first_pad": [true],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5],
+            "stop_tol": [1e-1],
+            "resolution": [8]
+        }
+    },
+    "xe_trajectory_turboae_40_2_debug": {
+        "name": "xe_trajectory",
+        "seed": 37849,
+        "runs":{
+            "checkpoint_basename": ["turboae_trainer"],
+            "checkpoint_daterange": [["2023_05_10_09_00_00", "2023_05_10_09_20_00"]],
+            "num_samples": [1000000],
+            "batch_size": [70000],
+            "snr": [0.0, 1.0, 2.0],
+            "front_pad": [false],
+            "first_pad": [true],
+            "num_iteration": [6],
+            "num_iter_ft": [5],
+            "dec_num_layer": [5],
+            "dec_num_unit": [100],
+            "dec_kernel_size": [5],
+            "stop_tol": [1e-1],
+            "resolution": [8]
+        }
+    },
     "benchmark_turboae_binary_finetuned_jtree": {
         "name": "benchmark_finetuned_turboae_codes_jt",
         "seed": 37849,
@@ -159,5 +316,56 @@
             "elimination_seed": [69783],
             "precision": ["half"]
         }
+    },
+    "estimate_xe_bcjr_block_len_40": {
+        "name": "benchmark_trellis_turbo_codes",
+        "seed": 37849,
+        "runs":
+            {
+                "encoder_name__modulator_type__batch_size": [["conv_15_7_00", "bpsk", 100000]],
+                "snr": [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0, -2.5, -3.0],
+                "block_len": [40],
+                "interleaver_type": ["fixed"],
+                "interleaver_base_seed": [56976],
+                "num_samples": [10000000],
+                "num_iter": [6, 20]
+            }
+    },
+    "estimate_xe_bcjr_block_len_40_debug": {
+        "name": "benchmark_trellis_turbo_codes",
+        "seed": 37849,
+        "runs":
+            {
+                "encoder_name__modulator_type__batch_size": [["conv_15_7_00", "bpsk", 12500]],
+                "snr": [3.0,-3.0],
+                "block_len": [40],
+                "interleaver_type": ["fixed"],
+                "interleaver_base_seed": [56976],
+                "num_samples": [12501],
+                "num_iter": [6, 20]
+            }
+    },
+    "cluster_tree_statistics_istc": {
+        "name": "cluster_tree_statistics",
+        "seed": 14123214,
+        "runs":
+            {
+                "interleaver_base_seed": [1049184],
+                "block_len": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150],
+                "window": [3, 5, 7, 9],
+                "num_samples": [10]
+            }
+    },
+    "cluster_tree_statistics_debug": {
+        "name": "cluster_tree_statistics",
+        "seed": 14123214,
+        "runs":
+            {
+                "interleaver_base_seed": [1049184],
+                "block_len": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175],
+                "window": [3, 5, 7, 9],
+                "num_samples": [2],
+                "tries": [2]
+            }
     }
 }
