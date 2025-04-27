@@ -1,6 +1,5 @@
 tmp/
 logs/
-models/*
 data/outputs/*
 !data/outputs/estimate_xe_bcjr_2.json
 !data/outputs/estimate_xe_bcjr.json
