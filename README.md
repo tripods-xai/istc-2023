@@ -29,7 +29,13 @@ From this environment you will be able to run the code in this repository. You c
 
 #### Setting up a Docker Python Environment with GPU Pytorch
 
-This project will use an image built off of the latest PyTorch GPU Docker image. To set up the Docker container run the included `run_docker.sh` script from the root of this repository.
+This project will use an image built off of the latest PyTorch GPU Docker image. First start the docker daemon:
+
+```
+> sudo dockerd
+```
+
+To set up the Docker container run the included `run_docker.sh` script from the root of this repository.
 
 ```
 > ./run_docker.sh
