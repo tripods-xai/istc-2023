@@ -2,6 +2,7 @@ tmp/
 logs/
 models/*
 data/outputs/*
+models/*
 !data/outputs/estimate_xe_bcjr_2.json
 !data/outputs/estimate_xe_bcjr.json
 !data/outputs/estimate_ber_neural_tae.json
