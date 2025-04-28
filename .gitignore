@@ -1,5 +1,6 @@
 tmp/
 logs/
+models/*
 data/outputs/*
 !data/outputs/estimate_xe_bcjr_2.json
 !data/outputs/estimate_xe_bcjr.json
@@ -7,6 +8,9 @@ data/outputs/*
 !data/outputs/estimate_ber_neural.json
 !data/outputs/train_turbo_table_batch_random_2.json
 !models/turboae_cont_encoder.pt
+!models/turboae_cont_decoder.pt
+!models/turboae_binary_encoder.pt
+!models/turboae_binary_decoder.pt
 !data/outputs/benchmark_turboae_40_2.json
 !data/outputs/benchmark_turboae_40_2_jtree.json
 !data/outputs/benchmark_turboae_40_2_jtree_high_snr.json
