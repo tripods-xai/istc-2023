@@ -75,23 +75,25 @@ The key experiments to run to regenerate the results in the paper are below. The
 3. Retrain the decoder of the original TurboAE-binary with block length 40 (`retrain_original_turboae_binary_block_len_40`)
 4. Compute the BCE decomposition training trajectory of your fresh TurboAE model (`decomposition_trajectory_turboae_40_2`)
 5. Compute the BCE training curve of your fresh TurboAE model (`xe_trajectory_turboae_40_2`)
-6. Benchmark the BER of the following models:
+6. Compute the decomposition of TurboAE-cont and TurboAE-binary at block length 40 (`decomposition_turboae_finetune_40`)
+7. Benchmark the BER of the following models:
    - Your fresh TurboAE model (`benchmark_turboae_40_2`)
    - The retrained original TurboAE-cont model (`benchmark_turboae_original_finetune_40`)
    - The retrained original TurboAE-binary model (`benchmark_turboae_original_finetune_40`)
    - The benchmark Turbo-155-7 code with BCJR decoding (`estimate_xe_bcjr_block_len_40`)
-7. Benchmark the BER of the same models with a junction tree decoder:
+8. Benchmark the BER of the same models with a junction tree decoder:
    - Your fresh TurboAE model (`benchmark_turboae_40_2_jtree`)
    - The retrained original TurboAE-cont model (`benchmark_turboae_cont_finetuned_jtree`)
    - The retrained original TurboAE-binary model (`benchmark_turboae_binary_finetuned_jtree`)
-8. Get statistics on the maximum cluster size of junction trees for random turbo codes (`cluster_tree_statistics_istc`)
+9. Get statistics on the maximum cluster size of junction trees for random turbo codes (`cluster_tree_statistics_istc`)
 
 Since some filepaths using outputs of previous experiments are hardcoded, you will need to edit `experiment_settings.json` as you go. I'll detail the steps below. Every experiment will output a JSON file in `data/outputs/` with the same name as the experiment. It will contain model settings, training curve data, and additional statistics.
 
 ### Experiment 1: Train a fresh version of TurboAE with block length 40
 
+From the `scripts` directory (use `cd scripts` to get there from the root of the repository), run the following experiment:
+
 ```
-> cd scripts
 > python run_experiment.py --experiment_id train_turboae_w9_first_no_front_small_batch_block_len_40_2
 ```
 
@@ -99,11 +101,130 @@ This will additionally write the following outputs:
 
 - `checkpoints/turboae_trainer_ep[EP]_[YYYY]_[MM]_[DD]_[hh]_[mm]_[ss].pt`: the checkpoint for epoch `EP`, written at time `YYYY-MM-DD hh:mm:ss`. Each epoch will have its own checkpoint file.
 - `models/train_turboae_w9_first_no_front_small_batch_block_len_40_2_[HASH].pt`: the final model weights. `HASH` is the argument hash of the experiment settings and is used to differentiate the same experiment name, run with different settings.
+- `models/train_turboae_w9_first_no_front_small_batch_block_len_40_2_[HASH].pt.opt`: The last state of the optimizer before training finished. This is useful if you want to resume training from the same state.
+
+**Note:** The above experiment will take a while to run. To avoid this step, you can download my checkpoints from https://drive.google.com/file/d/1Ro-UhlW8WkJae-aEuo4j08wD70B1Eszr/view?usp=sharing.
 
 ### Experiment 2 & 3: Retrain the decoder of the original TurboAE-cont with block length 40
 
+From the `scripts` directory, run the following experiments:
+
 ```
-> cd scripts
 > python run_experiment.py --experiment_id retrain_original_turboae_block_len_40
 > python run_experiment.py --experiment_id retrain_original_turboae_binary_block_len_40
 ```
+
+This will additionally write the following outputs:
+
+- `models/retrain_original_turboae_block_len_40_[HASH].pt`: The retrained TurboAE-cont encoder-decoder pair.
+- `models/retrain_original_turboae_block_len_40_[HASH].pt.opt`: The last state of the optimizer before training finished.
+- `models/retrain_original_turboae_binary_block_len_40_[HASH].pt`: The retrained TurboAE-binary encoder-decoder pair.
+- `models/retrain_original_turboae_binary_block_len_40_[HASH].pt.opt`: The last state of the optimizer before training finished.
+
+### Experiment 4: Compute the BCE decomposition training trajectory of your fresh TurboAE model
+
+Before running this experiment, we will need to modify its parameters in `experiment_settings.json` to use the checkpoints from Experiment 1. In `experiment_settings.json`, change the `checkpoint_daterange` to include the timestamps of the checkpoints from Experiment 1.
+
+```json
+"checkpoint_daterange": [["RANGE_START", "RANGE_END"]],
+```
+
+For example, to include checkpoints saved between 2025-04-28 00:00:00 and 2025-04-29 00:00:00, you would change the `checkpoint_daterange` to:
+
+```json
+"checkpoint_daterange": [["2025_04_28_00_00_00", "2025_04_29_00_00_00"]],
+```
+
+Once this is done, run the experiment from the `scripts` directory:
+
+```
+> python run_experiment.py --experiment_id decomposition_trajectory_turboae_40_2
+```
+
+### Experiment 5: Compute the BCE training curve of your fresh TurboAE model
+
+Before running this experiment, we again need to modify its parameters in `experiment_settings.json` to use the checkpoints from Experiment 1. In `experiment_settings.json`, change the `checkpoint_daterange` to include the timestamps of the checkpoints from Experiment 1.
+
+```json
+"checkpoint_daterange": [["RANGE_START", "RANGE_END"]],
+```
+
+Once this is done, run the experiment from the `scripts` directory:
+
+```
+> python run_experiment.py --experiment_id xe_trajectory_turboae_40_2
+```
+
+### Experiment 6: Compute the decomposition of TurboAE-cont and TurboAE-binary at block length 40
+
+Before running this experiment, we will need to modify its parameters in `experiment_settings.json` to use the finetuned models from Experiment 2 and 3. In `experiment_settings.json`, change the `decoder_path__turboae_type` to include the paths (**relative to the `scripts` directory**) to the finetuned models from Experiment 2 and 3.
+
+```json
+"decoder_path__turboae_type": [["PATH_TO_TURBOAE_BINARY_MODEL", "binary"], ["PATH_TO_TURBOAE_CONT_MODEL", "continuous"]],
+```
+
+For example, you might have
+
+```json
+"decoder_path__turboae_type": [["../models/retrain_original_turboae_binary_block_len_40_e92a5.pt", "binary"], ["../models/retrain_original_turboae_block_len_40_88214.pt", "continuous"]],
+```
+
+Once this is done, run the experiment from the `scripts` directory:
+
+```
+> python run_experiment.py --experiment_id decomposition_turboae_finetune_40
+```
+
+### Experiment 7: Benchmark the BER of the following models:
+
+First we'll need to modify the `experiment_settings.json` file to use our trained model from Experiment 1 and the finetuned models from Experiment 2 and 3.
+
+1. For the experiment `benchmark_turboae_40_2`, change the `encoder_decoder_path` to the path to the model from Experiment 1. For example,
+
+```json
+"encoder_decoder_path": ["../models/train_turboae_w9_first_no_front_small_batch_block_len_40_2_e3a1b.pt"],
+```
+
+2. For the experiment `benchmark_turboae_original_finetune_40`, change `decoder_path__turboae_type` to include the paths to the finetuned models from Experiment 2 and 3. For example,
+
+```json
+"decoder_path__turboae_type": [["../models/retrain_original_turboae_binary_block_len_40_a91f1.pt", "binary"], ["../models/retrain_original_turboae_block_len_40_e45db.pt", "continuous"]],
+```
+
+Now, from the `scripts` directory, run the following experiments:
+
+```
+> python run_experiment.py --experiment_id benchmark_turboae_40_2
+> python run_experiment.py --experiment_id benchmark_turboae_original_finetune_40
+> python run_experiment.py --experiment_id estimate_xe_bcjr_block_len_40
+```
+
+### Experiment 8: Benchmark the BER of the same models with a junction tree decoder
+
+First we'll need to modify the `experiment_settings.json` file to use our trained model from Experiment 1.
+
+For the experiment `benchmark_turboae_40_2_jtree`, change the `encoder_decoder_path` to the path to the model from Experiment 1. For example,
+
+```json
+"encoder_decoder_path": ["../models/train_turboae_w9_first_no_front_small_batch_block_len_40_2_e3a1b.pt"],
+```
+
+Now, from the `scripts` directory, run the following experiments:
+
+```
+> python run_experiment.py --experiment_id benchmark_turboae_40_2_jtree
+> python run_experiment.py --experiment_id benchmark_turboae_cont_finetuned_jtree
+> python run_experiment.py --experiment_id benchmark_turboae_binary_finetuned_jtree
+```
+
+### Experiment 9: Get statistics on the maximum cluster size of junction trees for random turbo codes
+
+From the `scripts` directory, run the following experiment:
+
+```
+> python run_experiment.py --experiment_id cluster_tree_statistics_istc
+```
+
+## Generating Figures
+
+All figures are generated using the `notebooks/istc-2023-plots.ipynb` notebook.

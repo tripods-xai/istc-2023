@@ -79,7 +79,7 @@ class DecoderCrossEntropySampler(Sampler):
 
     def instance_errors(
         self, u: torch.Tensor, logits: torch.FloatTensor
-    ) -> torch.Tensor:
+    ) -> dict[str, torch.Tensor]:
         cross_ent = F.binary_cross_entropy_with_logits(
             logits, u.float(), reduction="none"
         )
@@ -195,7 +195,7 @@ class HazzysTurboCrossEntropySampler(DecoderCrossEntropySampler):
 class DecoderConditionalEntropySampler(DecoderCrossEntropySampler):
     def __init__(
         self,
-        encoder: TrellisEncoder,
+        encoder: SizedEncoder,
         modulator: Modulator,
         channel: NoisyChannel,
         decoder: SoftDecoder,

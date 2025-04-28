@@ -1,3 +1,5 @@
+from typing import Union
+
 import torch
 import torch.nn as nn
 import gc
@@ -59,7 +61,7 @@ class DecompositionSampler(
         modulator: Modulator,
         channel: NoisyChannel,
         decoder: SoftDecoder,
-        elimination_seed: int = None,
+        elimination_seed: Union[int, None] = None,
         dtype: torch.dtype = torch.float16,
         device_manager=DEFAULT_DEVICE_MANAGER,
     ):
@@ -76,18 +78,16 @@ class DecompositionSampler(
             dtype=dtype,
         )
 
-    def instance_errors(
+    def instance_errors(  # type: ignore[override]
         self,
         u: torch.Tensor,
         approx_logits: torch.FloatTensor,
         true_logits: torch.FloatTensor,
-    ) -> torch.Tensor:
-        approx_errors = super(DecoderConditionalEntropySampler, self).instance_errors(
-            u, approx_logits
+    ) -> dict[str, torch.Tensor]:
+        approx_errors = DecoderCrossEntropySampler.instance_errors(
+            self, u, approx_logits
         )
-        true_errors = super(TurboAEDecompositionSampler, self).instance_errors(
-            u, true_logits
-        )
+        true_errors = DecoderCrossEntropySampler.instance_errors(self, u, true_logits)
 
         kl_divergence = approx_errors["xe"] - true_errors["xe"]
 
@@ -120,7 +120,7 @@ class TurboAEDecompositionSampler(DecompositionSampler):
         channel: NoisyChannel,
         decoder: SoftDecoder,
         encoder_as_conv: bool = False,
-        elimination_seed: int = None,
+        elimination_seed: Union[int, None] = None,
         dtype: torch.dtype = torch.float16,
         device_manager=DEFAULT_DEVICE_MANAGER,
     ):
@@ -189,7 +189,6 @@ class BCJRDecompositionSampler(
             device_manager=device_manager,
         )
 
-        
         super().__init__(
             encoder,
             modulator,
@@ -201,4 +200,3 @@ class BCJRDecompositionSampler(
         )
 
         self.num_iter = num_iter
-        

@@ -766,7 +766,9 @@ def benchmark_trellis_turbo_codes(
         manager=manager,
         interleaver_base_seed=interleaver_base_seed,
     )
-    encoder = get_encoder(encoder_name)(interleaver=interleaver, device_manager=manager)
+    encoder = get_encoder(encoder_name)(
+        num_steps=block_len, interleaver=interleaver, device_manager=manager
+    )
 
     if isinstance(encoder, TurboEncoder):
         encoder.interleaver = interleaver

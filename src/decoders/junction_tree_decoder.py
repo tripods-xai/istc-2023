@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import gc
 
 import torch
@@ -19,7 +19,7 @@ class JunctionTreeDecoder(SoftDecoder):
         modulator: Modulator,
         channel: NoisyChannel,
         cluster_tree=None,
-        elimination_seed: int = None,
+        elimination_seed: Union[int, None] = None,
         dtype=torch.float16,
         device_manager: DeviceManager = DEFAULT_DEVICE_MANAGER,
     ):

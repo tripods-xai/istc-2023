@@ -26,7 +26,7 @@ TURBOAE_ENCODER_CONT_STD = math.sqrt(0.2694892215728756)
 
 INPUT_SYMBOL = "u"
 
-TURBOAE_EXACT_TABLE1_BITS_3_98 = torch.CharTensor(
+TURBOAE_EXACT_TABLE1_BITS_3_98 = torch.tensor(
     [
         [1, 0],
         [0, 1],
@@ -61,8 +61,9 @@ TURBOAE_EXACT_TABLE1_BITS_3_98 = torch.CharTensor(
         [1, 1],
         [0, 0],
     ],
+    dtype=torch.int8,
 )
-TURBOAE_EXACT_TABLE2_BITS_3_98 = torch.CharTensor(
+TURBOAE_EXACT_TABLE2_BITS_3_98 = torch.tensor(
     [
         [1],
         [0],
@@ -97,6 +98,7 @@ TURBOAE_EXACT_TABLE2_BITS_3_98 = torch.CharTensor(
         [0],
         [1],
     ],
+    dtype=torch.int8,
 )
 
 TURBOAE_INTERLEAVER_PERMUTATION = torch.LongTensor(
