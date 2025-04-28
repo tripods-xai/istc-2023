@@ -6,7 +6,7 @@ For any questions or inquries, please email me at *abhmul@gmail.com*.
 
 ## Instructions for Use
 
-_The below directions have been tested on a computer running Ubuntu 20.04._
+_The below directions have been tested on a computer running Arch Linux with kernel version 6.14.4-arch1-1._
 
 ### Setting up
 
