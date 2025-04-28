@@ -41,7 +41,7 @@ To set up the Docker container run the included `run_docker.sh` script from the 
 > ./run_docker.sh
 ```
 
-This will build the image if it is not already built and then start a container. Once the image is built and the container is running, you will be in a editable version of the repository. Next, you'll need to install the code for the experiments:
+This will build the image if it is not already built and then start a container. Once the image is built and the container is running, you will be in a editable version of the repository. Next, you'll need to install the code for the experiments (see below). **This step needs to be done every time you start the container:**
 
 ```
 > root@[your_machine]:/code# ls
@@ -86,7 +86,7 @@ The key experiments to run to regenerate the results in the paper are below. The
    - The retrained original TurboAE-binary model (`benchmark_turboae_binary_finetuned_jtree`)
 8. Get statistics on the maximum cluster size of junction trees for random turbo codes (`cluster_tree_statistics_istc`)
 
-Since some filepaths using outputs of previous experiments are hardcoded, you will need to edit `experiment_settings.json` as you go. I'll detail the steps below:
+Since some filepaths using outputs of previous experiments are hardcoded, you will need to edit `experiment_settings.json` as you go. I'll detail the steps below. Every experiment will output a JSON file in `data/outputs/` with the same name as the experiment. It will contain model settings, training curve data, and additional statistics.
 
 ### Experiment 1: Train a fresh version of TurboAE with block length 40
 
@@ -95,4 +95,15 @@ Since some filepaths using outputs of previous experiments are hardcoded, you wi
 > python run_experiment.py --experiment_id train_turboae_w9_first_no_front_small_batch_block_len_40_2
 ```
 
-This will write a JSON file output to `outputs`.
+This will additionally write the following outputs:
+
+- `checkpoints/turboae_trainer_ep[EP]_[YYYY]_[MM]_[DD]_[hh]_[mm]_[ss].pt`: the checkpoint for epoch `EP`, written at time `YYYY-MM-DD hh:mm:ss`. Each epoch will have its own checkpoint file.
+- `models/train_turboae_w9_first_no_front_small_batch_block_len_40_2_[HASH].pt`: the final model weights. `HASH` is the argument hash of the experiment settings and is used to differentiate the same experiment name, run with different settings.
+
+### Experiment 2 & 3: Retrain the decoder of the original TurboAE-cont with block length 40
+
+```
+> cd scripts
+> python run_experiment.py --experiment_id retrain_original_turboae_block_len_40
+> python run_experiment.py --experiment_id retrain_original_turboae_binary_block_len_40
+```
